@@ -319,24 +319,33 @@ function computeNormalizedScore(totalPoints: number): number {
   return clamp(raw, 0, 100);
 }
 
+function formatRoundCountdown(msLeft: number | null): string {
+  if (msLeft === null) return "--:--";
+  const total = Math.max(0, msLeft);
+  const sec = Math.floor(total / 1000);
+  const centis = Math.floor((total % 1000) / 10);
+  return `${sec}:${centis.toString().padStart(2, "0")}`;
+}
+
 const App: React.FC = () => {
-  // Disclaimer: must acknowledge before license.
+  // DISCLAIMER (headphones) – must acknowledge before license.
   const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false);
   const [isHeadphoneTestPlaying, setIsHeadphoneTestPlaying] = useState(false);
 
-  // License: null = not answered; true = accepted; false = not accepted (blocked).
+  // LICENSE: null = undecided; true = accepted; false = rejected/blocked.
   const [licenseAccepted, setLicenseAccepted] = useState<boolean | null>(null);
 
-  // Exam started (after clicking "START EXAMINATION").
+  // EXAM: started after "START EXAMINATION".
   const [examStarted, setExamStarted] = useState(false);
 
-  // General exam timer
-  const [examStartTimeMs, setExamStartTimeMs] = useState<number | null>(null);
+  // Exam timer (from START EXAMINATION).
   const [examElapsedMs, setExamElapsedMs] = useState(0);
+  const examTimerIntervalRef = useRef<number | null>(null);
 
-  // Intervals: default = none selected
+  // Interval selection – default: NONE selected until user chooses.
   const [selectedIntervalIds, setSelectedIntervalIds] = useState<number[]>([]);
 
+  // Rounds & scoring.
   const [rounds, setRounds] = useState<RoundConfig[]>([]);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [sliderValue, setSliderValue] = useState(0.5);
@@ -345,82 +354,36 @@ const App: React.FC = () => {
   const [roundStartTime, setRoundStartTime] = useState<number | null>(null);
   const [roundCompleted, setRoundCompleted] = useState(false);
   const [lastResult, setLastResult] = useState<RoundResult | null>(null);
+  const [roundResults, setRoundResults] = useState<RoundResult[]>([]);
   const [sessionComplete, setSessionComplete] = useState(false);
 
-  // Per-round countdown timer
-  const [roundRemainingSeconds, setRoundRemainingSeconds] = useState<number>(
-    MAX_ROUND_DURATION_SECONDS
-  );
-
-  const roundTimerIntervalRef = useRef<number | null>(null);
-
+  // Hint system.
   const [hintVisible, setHintVisible] = useState(false);
   const [hintIndexUsedThisRound, setHintIndexUsedThisRound] = useState<
     number | null
   >(null);
   const [hintsUsedInSession, setHintsUsedInSession] = useState(0);
 
+  // Auto-submit for round & round countdown timer.
   const autoSubmitTimeoutRef = useRef<number | null>(null);
+  const [roundTimeLeftMs, setRoundTimeLeftMs] = useState<number | null>(null);
+  const roundTimerIntervalRef = useRef<number | null>(null);
 
   const currentRound =
     examStarted && rounds.length > 0 ? rounds[currentRoundIndex] : null;
   const normalizedScore = computeNormalizedScore(totalPoints);
 
-  // Hint window: 30-cent wide window centered on correct position
+  // Hint window: 30-cent wide window centered on correct slider position.
   let hintLeftPercent = 0;
   let hintWidthPercent = 0;
   if (currentRound) {
-    const halfWindowCents = 15;
+    const halfWindowCents = 15; // total 30 cents
     const half = halfWindowCents / currentRound.sliderRangeCents;
     const start = Math.max(0, currentRound.sliderCorrectPosition - half);
     const end = Math.min(1, currentRound.sliderCorrectPosition + half);
     hintLeftPercent = start * 100;
     hintWidthPercent = (end - start) * 100;
   }
-
-  useEffect(() => {
-    // General exam timer
-    if (examStartTimeMs === null) return;
-    const id = window.setInterval(() => {
-      setExamElapsedMs(performance.now() - examStartTimeMs);
-    }, 200);
-    return () => clearInterval(id);
-  }, [examStartTimeMs]);
-
-  useEffect(() => {
-    return () => {
-      audioEngine.stop();
-      if (autoSubmitTimeoutRef.current !== null) {
-        clearTimeout(autoSubmitTimeoutRef.current);
-        autoSubmitTimeoutRef.current = null;
-      }
-      if (roundTimerIntervalRef.current !== null) {
-        clearInterval(roundTimerIntervalRef.current);
-        roundTimerIntervalRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!examStarted || !currentRound) return;
-
-    if (autoSubmitTimeoutRef.current !== null) {
-      clearTimeout(autoSubmitTimeoutRef.current);
-      autoSubmitTimeoutRef.current = null;
-    }
-    if (roundTimerIntervalRef.current !== null) {
-      clearInterval(roundTimerIntervalRef.current);
-      roundTimerIntervalRef.current = null;
-    }
-
-    setSliderValue(currentRound.initialSliderValue);
-    setRoundStartTime(null);
-    setRoundCompleted(false);
-    setHintVisible(false);
-    setHintIndexUsedThisRound(null);
-    setRoundRemainingSeconds(MAX_ROUND_DURATION_SECONDS);
-    audioEngine.stop();
-  }, [examStarted, currentRoundIndex, currentRound]);
 
   const clearAutoSubmitTimer = () => {
     if (autoSubmitTimeoutRef.current !== null) {
@@ -429,11 +392,54 @@ const App: React.FC = () => {
     }
   };
 
-  const clearRoundTimerInterval = () => {
+  const clearRoundTimer = () => {
     if (roundTimerIntervalRef.current !== null) {
       clearInterval(roundTimerIntervalRef.current);
       roundTimerIntervalRef.current = null;
     }
+    setRoundTimeLeftMs(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      audioEngine.stop();
+      clearAutoSubmitTimer();
+      clearRoundTimer();
+      if (examTimerIntervalRef.current !== null) {
+        clearInterval(examTimerIntervalRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (sessionComplete && examTimerIntervalRef.current !== null) {
+      clearInterval(examTimerIntervalRef.current);
+      examTimerIntervalRef.current = null;
+    }
+  }, [sessionComplete]);
+
+  useEffect(() => {
+    if (!examStarted || !currentRound) return;
+
+    clearAutoSubmitTimer();
+    clearRoundTimer();
+    setSliderValue(currentRound.initialSliderValue);
+    setRoundStartTime(null);
+    setRoundCompleted(false);
+    setHintVisible(false);
+    setHintIndexUsedThisRound(null);
+    audioEngine.stop();
+  }, [examStarted, currentRoundIndex, currentRound]);
+
+  const startExamTimer = () => {
+    if (examTimerIntervalRef.current !== null) {
+      clearInterval(examTimerIntervalRef.current);
+    }
+    const start = Date.now();
+    setExamElapsedMs(0);
+    examTimerIntervalRef.current = window.setInterval(() => {
+      setExamElapsedMs(Date.now() - start);
+    }, 250);
   };
 
   const startNewExamSession = () => {
@@ -448,23 +454,23 @@ const App: React.FC = () => {
     setRoundStartTime(null);
     setRoundCompleted(false);
     setLastResult(null);
+    setRoundResults([]);
     setSessionComplete(false);
     setHintVisible(false);
     setHintIndexUsedThisRound(null);
     setHintsUsedInSession(0);
     clearAutoSubmitTimer();
-    clearRoundTimerInterval();
+    clearRoundTimer();
     audioEngine.stop();
     setExamStarted(true);
-    setExamStartTimeMs(performance.now());
-    setExamElapsedMs(0);
 
     if (newRounds[0]) {
       setSliderValue(newRounds[0].initialSliderValue);
     } else {
       setSliderValue(0.5);
     }
-    setRoundRemainingSeconds(MAX_ROUND_DURATION_SECONDS);
+
+    startExamTimer();
   };
 
   const handlePlay = async () => {
@@ -474,20 +480,27 @@ const App: React.FC = () => {
 
     const now = performance.now();
     setRoundStartTime(now);
-    setRoundRemainingSeconds(MAX_ROUND_DURATION_SECONDS);
 
     clearAutoSubmitTimer();
-    clearRoundTimerInterval();
+    clearRoundTimer();
+
+    // Countdown timer (sec:centisec)
+    const start = Date.now();
+    setRoundTimeLeftMs(MAX_ROUND_DURATION_SECONDS * 1000);
+    roundTimerIntervalRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - start;
+      const remaining = MAX_ROUND_DURATION_SECONDS * 1000 - elapsed;
+      if (remaining <= 0) {
+        setRoundTimeLeftMs(0);
+        clearRoundTimer();
+      } else {
+        setRoundTimeLeftMs(remaining);
+      }
+    }, 50);
 
     autoSubmitTimeoutRef.current = window.setTimeout(() => {
       handleDone(true);
     }, MAX_ROUND_DURATION_SECONDS * 1000);
-
-    roundTimerIntervalRef.current = window.setInterval(() => {
-      const elapsed = (performance.now() - now) / 1000;
-      const remaining = Math.max(0, MAX_ROUND_DURATION_SECONDS - elapsed);
-      setRoundRemainingSeconds(remaining);
-    }, 50);
 
     const audioState = computeAudioState(currentRound, sliderValue);
     await audioEngine.startInterval(audioState);
@@ -507,7 +520,7 @@ const App: React.FC = () => {
     if (!currentRound || roundCompleted || !examStarted) return;
 
     clearAutoSubmitTimer();
-    clearRoundTimerInterval();
+    clearRoundTimer();
 
     const audioState = computeAudioState(currentRound, sliderValue);
     audioEngine.stop();
@@ -548,6 +561,13 @@ const App: React.FC = () => {
       contributions
     };
     setLastResult(result);
+    setRoundResults((prev) => {
+      const others = prev.filter((r) => r.roundIndex !== currentRound.index);
+      const combined = [...others, result].sort(
+        (a, b) => a.roundIndex - b.roundIndex
+      );
+      return combined;
+    });
 
     if (currentRoundIndex === rounds.length - 1) {
       setSessionComplete(true);
@@ -633,7 +653,9 @@ const App: React.FC = () => {
       f1Hz: 440,
       f2Hz: 660,
       errorCents: 0,
+      // @ts-ignore – extra fields used by DSP, harmless.
       centsOffset: 0,
+      // @ts-ignore
       rActual: 1.5
     };
     await audioEngine.startInterval(state);
@@ -655,6 +677,15 @@ const App: React.FC = () => {
     audioEngine.stop();
   };
 
+  const handleSaveResultsPdf = () => {
+    // Let the browser's Print > "Save as PDF" handle the actual PDF.
+    window.print();
+  };
+
+  const handleResetPage = () => {
+    window.location.reload();
+  };
+
   const lastResultForCurrentRound =
     lastResult && currentRound && lastResult.roundIndex === currentRound.index
       ? lastResult
@@ -670,19 +701,29 @@ const App: React.FC = () => {
   const canStartExam = !!licenseAccepted && selectedIntervalIds.length > 0;
   const currentRoundDisplay = examStarted ? currentRoundIndex + 1 : 0;
 
-  // Round countdown formatting
-  const remaining = roundRemainingSeconds;
-  const roundTimerFormatted = `${remaining.toFixed(2)}s`;
-  let roundTimerClass = "round-timer-green";
-  if (remaining <= 10 && remaining > 5) {
-    roundTimerClass = "round-timer-warn";
-  } else if (remaining <= 5) {
-    roundTimerClass = "round-timer-danger";
-  }
+  const roundTimerCritical =
+    roundTimeLeftMs !== null && roundTimeLeftMs <= 5000 && roundTimeLeftMs > 0;
 
-  const nextRoundBtnClass =
-    "btn btn-ghost" +
-    (roundCompleted && !sessionComplete ? " btn-next-blink" : "");
+  // Progress data for results graph.
+  const resultsComplete =
+    sessionComplete && roundResults.length === TOTAL_ROUNDS;
+
+  const progressPolyline = (() => {
+    if (!resultsComplete) return "";
+    let runningTotal = 0;
+    const points: string[] = [];
+    for (let i = 0; i < roundResults.length; i++) {
+      runningTotal += roundResults[i].deltaScore;
+      const norm = computeNormalizedScore(runningTotal);
+      const x =
+        TOTAL_ROUNDS > 1
+          ? (i / (TOTAL_ROUNDS - 1)) * 100
+          : 0;
+      const y = 100 - norm; // invert for SVG
+      points.push(`${x},${y}`);
+    }
+    return points.join(" ");
+  })();
 
   return (
     <div className="app-root">
@@ -700,7 +741,7 @@ const App: React.FC = () => {
           totalRounds={TOTAL_ROUNDS}
           passThreshold={PASS_THRESHOLD}
           sessionComplete={sessionComplete}
-          examElapsedMs={examElapsedMs}
+          elapsedExamMs={examStarted ? examElapsedMs : null}
         />
       </header>
 
@@ -725,7 +766,7 @@ const App: React.FC = () => {
           {!examStarted ? (
             <>
               <div className="round-header">
-                <h2>EXAMINATION NOT STARTED</h2>
+                <h2>Examination not started</h2>
               </div>
               <p className="feedback-hint">
                 1. Read the audio disclaimer and accept it. <br />
@@ -739,7 +780,7 @@ const App: React.FC = () => {
           ) : currentRound ? (
             <>
               <div className="round-header">
-                <h2>ROUND {currentRoundIndex + 1}</h2>
+                <h2>Round {currentRoundIndex + 1}</h2>
                 <p className="round-interval-name">
                   {currentRound.interval.name}{" "}
                   <span className="round-interval-ratio">
@@ -750,25 +791,38 @@ const App: React.FC = () => {
 
               <div className="round-meta">
                 <div className="round-meta-item">
-                  <span className="meta-label">ANCHOR NOTE</span>
+                  <span className="meta-label">Anchor note</span>
                   <span className="meta-value">
                     {currentRound.baseFreqHz.toFixed(1)} Hz
                   </span>
                 </div>
                 <div className="round-meta-item">
-                  <span className="meta-label">YOU TUNE</span>
+                  <span className="meta-label">You tune</span>
                   <span className="meta-value">
                     {currentRound.tuneUpper
-                      ? "UPPER (HIGHER) NOTE"
-                      : "LOWER (BASS) NOTE"}
+                      ? "Upper (higher) note"
+                      : "Lower (bass) note"}
                   </span>
                 </div>
                 <div className="round-meta-item">
-                  <span className="meta-label">TASK TIME LEFT</span>
-                  <span className={`meta-value round-timer ${roundTimerClass}`}>
-                    {roundTimerFormatted}
+                  <span className="meta-label">Session mode</span>
+                  <span className="meta-value">
+                    {TOTAL_ROUNDS} rounds · pass at {PASS_THRESHOLD}+ points
                   </span>
                 </div>
+              </div>
+
+              <div className="round-timers">
+                <span className="round-timer-label">Task countdown</span>
+                <span
+                  className={`round-timer-value ${
+                    roundTimerCritical
+                      ? "round-timer-critical"
+                      : "round-timer-ok"
+                  }`}
+                >
+                  {formatRoundCountdown(roundTimeLeftMs)}
+                </span>
               </div>
 
               <div className="controls-row">
@@ -778,14 +832,14 @@ const App: React.FC = () => {
                     onClick={handlePlay}
                     disabled={sessionComplete || roundCompleted}
                   >
-                    ▶ PLAY
+                    ▶ Play
                   </button>
                   <button
                     className="btn btn-panic"
                     onClick={handlePanicStop}
                     disabled={sessionComplete || roundCompleted}
                   >
-                    PANICK / STOP SOUND
+                    Panick / Stop Sound
                   </button>
                 </div>
 
@@ -794,7 +848,7 @@ const App: React.FC = () => {
                   onClick={() => handleDone(false)}
                   disabled={sessionComplete || roundCompleted}
                 >
-                  DONE
+                  Done
                 </button>
                 <button
                   className="btn btn-hint"
@@ -806,20 +860,24 @@ const App: React.FC = () => {
                     !hintAvailable
                   }
                 >
-                  💡 HINT
+                  💡 Hint
                 </button>
                 <button
-                  className={nextRoundBtnClass}
+                  className={`btn btn-ghost btn-next-round ${
+                    roundCompleted && !sessionComplete
+                      ? "btn-next-round--blink"
+                      : ""
+                  }`}
                   onClick={handleNextRound}
                   disabled={!roundCompleted && !sessionComplete}
                 >
-                  {sessionComplete ? "RESTART SESSION" : "NEXT ROUND"}
+                  {sessionComplete ? "Restart Session" : "Next Round"}
                 </button>
               </div>
 
               <div className="slider-block">
                 <label htmlFor="tuning-slider" className="slider-label">
-                  TUNING SLIDER
+                  Tuning slider
                 </label>
                 <div className="slider-wrapper">
                   <input
@@ -848,7 +906,7 @@ const App: React.FC = () => {
                   Move slowly until the beats calm down and the sound feels{" "}
                   <em>steady</em>. The correct tuning point is different every
                   round and is <strong>not</strong> visually marked. The{" "}
-                  <strong>HINT</strong> button reveals a{" "}
+                  <strong>Hint</strong> button reveals a{" "}
                   <strong>30-cent wide</strong> window centered on the correct
                   answer; hints are limited and become more expensive as you use
                   them.
@@ -863,34 +921,33 @@ const App: React.FC = () => {
               </div>
 
               <div
-                className={
-                  "round-feedback" +
-                  (lastResultForCurrentRound ? " round-feedback-active" : "")
-                }
+                className={`round-feedback ${
+                  lastResultForCurrentRound ? "round-feedback--active" : ""
+                }`}
               >
                 {lastResultForCurrentRound ? (
                   <>
-                    <h3>ROUND RESULT</h3>
-                    <p className="feedback-main feedback-main-large">
-                      TUNING ERROR:{" "}
-                      <span className="feedback-error-cents">
+                    <h3>Round result</h3>
+                    <p className="feedback-main">
+                      Tuning error:{" "}
+                      <strong>
                         {Math.abs(lastResultForCurrentRound.errorCents).toFixed(
                           2
                         )}{" "}
-                        CENTS
-                      </span>{" "}
+                        cents
+                      </strong>{" "}
                       (
                       {directionLabel(
                         lastResultForCurrentRound.errorCents
-                      ).toUpperCase()}
+                      )}
                       )
                     </p>
-                    <p className="feedback-sub feedback-sub-large">
-                      TIME (CAPPED AT {MAX_ROUND_DURATION_SECONDS}S):{" "}
+                    <p className="feedback-sub">
+                      Time (capped at {MAX_ROUND_DURATION_SECONDS}s):{" "}
                       <strong>
-                        {lastResultForCurrentRound.timeSeconds.toFixed(2)} S
+                        {lastResultForCurrentRound.timeSeconds.toFixed(2)} s
                       </strong>{" "}
-                      · ROUND SCORE CHANGE:{" "}
+                      · Round score change:{" "}
                       <strong>
                         {lastResultForCurrentRound.deltaScore > 0 ? "+" : ""}
                         {lastResultForCurrentRound.deltaScore}
@@ -918,9 +975,9 @@ const App: React.FC = () => {
 
               {sessionComplete && (
                 <div className="session-summary">
-                  <h3>SESSION COMPLETE</h3>
-                  <p className="session-summary-main">
-                    FINAL SCORE:{" "}
+                  <h3>Session complete</h3>
+                  <p>
+                    Final score:{" "}
                     <strong>
                       {normalizedScore.toFixed(1)} / 100 –{" "}
                       {normalizedScore >= PASS_THRESHOLD ? "PASS ✅" : "FAIL ❌"}
@@ -929,25 +986,146 @@ const App: React.FC = () => {
                   <p className="session-summary-text">
                     You can restart to get a fresh exam using the currently
                     selected intervals on the left. Scoring is normalized so{" "}
-                    <strong>210 POINTS</strong> (all world-class &amp; fast)
+                    <strong>210 points</strong> (all world-class &amp; fast)
                     maps to <strong>100/100</strong>.
                   </p>
                 </div>
               )}
+
+              {resultsComplete && (
+                <div className="results-panel" id="results-print">
+                  <h3>Full results (30 tasks)</h3>
+                  <table className="results-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Interval</th>
+                        <th>Error (cents)</th>
+                        <th>Time (s)</th>
+                        <th>Δ Points</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {roundResults.map((r) => {
+                        const roundIndex = r.roundIndex + 1;
+                        const intervalName =
+                          rounds[r.roundIndex]?.interval.name ?? "—";
+                        const absErr = Math.abs(r.errorCents).toFixed(2);
+                        const time = r.timeSeconds.toFixed(2);
+                        const delta = r.deltaScore;
+                        const deltaClass =
+                          delta > 0
+                            ? "round-positive"
+                            : delta < 0
+                            ? "round-negative"
+                            : "";
+                        return (
+                          <tr key={r.roundIndex}>
+                            <td>{roundIndex}</td>
+                            <td>{intervalName}</td>
+                            <td>{absErr}</td>
+                            <td>{time}</td>
+                            <td className={deltaClass}>
+                              {delta > 0 ? `+${delta}` : delta}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  <div className="results-graph">
+                    <p className="results-graph-label">
+                      Progress (running normalized score)
+                    </p>
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient
+                          id="progressFill"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop offset="0%" stopColor="rgba(77,163,255,0.6)" />
+                          <stop
+                            offset="100%"
+                            stopColor="rgba(77,163,255,0.0)"
+                          />
+                        </linearGradient>
+                      </defs>
+                      <rect
+                        x="0"
+                        y="0"
+                        width="100"
+                        height="100"
+                        fill="#11141d"
+                      />
+                      <polyline
+                        points="0,25 100,25"
+                        stroke="#303545"
+                        strokeWidth="0.3"
+                        fill="none"
+                      />
+                      <polyline
+                        points="0,50 100,50"
+                        stroke="#303545"
+                        strokeWidth="0.3"
+                        fill="none"
+                      />
+                      <polyline
+                        points="0,75 100,75"
+                        stroke="#303545"
+                        strokeWidth="0.3"
+                        fill="none"
+                      />
+                      {progressPolyline && (
+                        <>
+                          <polyline
+                            points={progressPolyline}
+                            stroke="#4da3ff"
+                            strokeWidth="1.2"
+                            fill="none"
+                          />
+                          <polygon
+                            points={`${progressPolyline} 100,100 0,100`}
+                            fill="url(#progressFill)"
+                          />
+                        </>
+                      )}
+                    </svg>
+                  </div>
+
+                  <div className="results-actions">
+                    <button
+                      className="btn btn-secondary"
+                      onClick={handleSaveResultsPdf}
+                    >
+                      Save Results In PDF
+                    </button>
+                    <button
+                      className="btn btn-panic"
+                      onClick={handleResetPage}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
-            <p>WAITING FOR EXAMINATION TO START…</p>
+            <p>Waiting for examination to start…</p>
           )}
         </section>
       </main>
 
       <footer className="app-footer" />
 
-      {/* Audio DISCLAIMER overlay – appears first */}
+      {/* DISCLAIMER overlay – headphones */}
       {!disclaimerAcknowledged && licenseAccepted !== false && (
         <div className="license-overlay">
           <div className="license-dialog card">
-            <h2>AUDIO DISCLAIMER – USE HEADPHONES</h2>
+            <h2>Audio disclaimer – use headphones</h2>
             <div className="license-scroll">
               <p>
                 For accurate tuning and to protect your ears,{" "}
@@ -970,27 +1148,27 @@ const App: React.FC = () => {
                 onClick={handleHeadphoneTestStart}
                 disabled={isHeadphoneTestPlaying}
               >
-                TEST HEADPHONES
+                Test Headphones
               </button>
               <button
                 className="btn btn-ghost"
                 onClick={handleHeadphoneTestStop}
                 disabled={!isHeadphoneTestPlaying}
               >
-                STOP TEST
+                Stop Test
               </button>
               <button
                 className="btn btn-primary"
                 onClick={handleCloseDisclaimer}
               >
-                CLOSE DISCLAIMER
+                Close Disclaimer
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* License overlay – shown after disclaimer is closed, until Accept/Not Accept */}
+      {/* License overlay – after disclaimer */}
       {disclaimerAcknowledged && licenseAccepted === null && (
         <div className="license-overlay">
           <div className="license-dialog card">
@@ -1000,13 +1178,13 @@ const App: React.FC = () => {
                 className="btn btn-primary"
                 onClick={handleAcceptLicense}
               >
-                ACCEPT
+                Accept
               </button>
               <button
                 className="btn btn-secondary"
                 onClick={handleRejectLicense}
               >
-                NOT ACCEPT
+                Not Accept
               </button>
             </div>
           </div>
@@ -1017,7 +1195,7 @@ const App: React.FC = () => {
       {licenseAccepted === false && (
         <div className="blocked-overlay">
           <div className="blocked-message">
-            <h2>LICENSE NOT ACCEPTED</h2>
+            <h2>License not accepted</h2>
             <p>
               You did not accept the Testing-Only, No-Copy Software License
               (CTOL v1.0). The application is blocked and cannot be used.
