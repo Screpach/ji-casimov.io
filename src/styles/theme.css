@@ -106,8 +106,6 @@ body {
   align-items: center;
   padding: 12px 16px;
   background: linear-gradient(135deg, #313647, #20232c);
-  border-radius: var(--radius-large);
-  border: 1px solid var(--border-subtle);
 }
 
 .status-item {
@@ -140,13 +138,9 @@ body {
   color: var(--danger);
 }
 
-.status-item.timer-global .status-value {
-  color: #ff6b6b;
+.status-timer {
+  color: #ff6f6f;
   font-weight: 700;
-  font-family: "SF Mono", Menlo, Consolas, monospace;
-}
-
-.status-item.timer-round .status-value {
   font-family: "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -196,6 +190,25 @@ body {
   margin-top: 3px;
 }
 
+/* Round task timer */
+
+.round-timer {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-weight: 600;
+}
+
+.round-timer-green {
+  color: #6af0bd;
+}
+
+.round-timer-warn {
+  color: #ffd27a;
+}
+
+.round-timer-danger {
+  color: #ff6f6f;
+}
+
 /* Buttons */
 
 .controls-row {
@@ -222,6 +235,7 @@ body {
     border-color var(--transition-fast), color var(--transition-fast);
   outline: none;
   text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .btn-primary {
@@ -277,42 +291,49 @@ body {
   border-color: #ff9d9d;
 }
 
-/* DONE button – green border emphasis */
+/* DONE button with green border */
 
 .btn-done {
-  border-color: #55d68e;
+  border-color: #4fe09b !important;
 }
 
 /* HINT button – yellow/red striped border */
 
 .btn-hint {
+  background: transparent;
+  color: #ffd27a;
   border-width: 2px;
   border-style: solid;
   border-image: repeating-linear-gradient(
       45deg,
-      #ffcc00 0,
-      #ffcc00 4px,
-      #ff4444 4px,
-      #ff4444 8px
+      #ffd27a 0,
+      #ffd27a 4px,
+      #ff6f6f 4px,
+      #ff6f6f 8px
     )
     1;
 }
 
-/* NEXT ROUND blinking */
+.btn-hint:hover:not(:disabled) {
+  background: rgba(255, 210, 122, 0.08);
+}
 
-@keyframes next-round-blink {
+/* Next round blinking to draw attention */
+
+@keyframes nextBlink {
   0% {
-    box-shadow: 0 0 0 0 rgba(77, 163, 255, 0.0);
-    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
   }
   100% {
-    box-shadow: 0 0 0 6px rgba(77, 163, 255, 0.35);
-    transform: translateY(-1px);
+    opacity: 1;
   }
 }
 
-.btn-next-round-blink {
-  animation: next-round-blink 1.4s ease-in-out infinite alternate;
+.btn-next-blink {
+  animation: nextBlink 1.4s infinite;
 }
 
 /* Slider */
@@ -413,15 +434,14 @@ body {
   background: #222633;
   border: 1px solid #383f4c;
   font-size: 0.96rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease,
+    transform 0.2s ease;
 }
 
-.round-feedback-completed {
+.round-feedback-active {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(77, 163, 255, 0.3);
-}
-
-.round-feedback-completed .feedback-main {
-  font-size: 1.12rem;
+  box-shadow: 0 0 0 1px rgba(77, 163, 255, 0.4);
+  transform: translateY(-1px);
 }
 
 .feedback-main {
@@ -431,6 +451,20 @@ body {
 .feedback-sub {
   margin: 0 0 6px;
   color: var(--text-muted);
+}
+
+.feedback-main-large {
+  font-size: 1.1rem;
+}
+
+.feedback-sub-large {
+  font-size: 1.02rem;
+}
+
+.feedback-error-cents {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #ffd27a;
 }
 
 .feedback-list {
@@ -454,6 +488,11 @@ body {
   background: #222635;
   border: 1px dashed #454d5d;
   font-size: 0.96rem;
+}
+
+.session-summary-main {
+  font-size: 1.05rem;
+  font-weight: 600;
 }
 
 .session-summary-text {
