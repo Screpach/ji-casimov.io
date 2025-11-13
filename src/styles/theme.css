@@ -106,6 +106,8 @@ body {
   align-items: center;
   padding: 12px 16px;
   background: linear-gradient(135deg, #313647, #20232c);
+  border-radius: var(--radius-large);
+  border: 1px solid var(--border-subtle);
 }
 
 .status-item {
@@ -136,6 +138,16 @@ body {
 
 .status-fail {
   color: var(--danger);
+}
+
+.status-item.timer-global .status-value {
+  color: #ff6b6b;
+  font-weight: 700;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+}
+
+.status-item.timer-round .status-value {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
 }
 
 /* Game panel */
@@ -186,32 +198,17 @@ body {
 
 /* Buttons */
 
-/* Controls layout: PLAY + PANIC in a small column */
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
 
 .controls-main {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-/* Panic button – red emergency stop */
-
-.btn-panic {
-  background: #b52a2a;
-  border-color: #ff8484;
-  color: #fff;
-  font-weight: 600;
-}
-
-.btn-panic:hover:not(:disabled) {
-  background: #d93636;
-  border-color: #ff9d9d;
-}
-
-.controls-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
 }
 
 .btn {
@@ -224,6 +221,7 @@ body {
     transform var(--transition-fast), box-shadow var(--transition-fast),
     border-color var(--transition-fast), color var(--transition-fast);
   outline: none;
+  text-transform: uppercase;
 }
 
 .btn-primary {
@@ -263,6 +261,58 @@ body {
   cursor: default;
   box-shadow: none;
   transform: none;
+}
+
+/* Panic button – red emergency stop */
+
+.btn-panic {
+  background: #b52a2a;
+  border-color: #ff8484;
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn-panic:hover:not(:disabled) {
+  background: #d93636;
+  border-color: #ff9d9d;
+}
+
+/* DONE button – green border emphasis */
+
+.btn-done {
+  border-color: #55d68e;
+}
+
+/* HINT button – yellow/red striped border */
+
+.btn-hint {
+  border-width: 2px;
+  border-style: solid;
+  border-image: repeating-linear-gradient(
+      45deg,
+      #ffcc00 0,
+      #ffcc00 4px,
+      #ff4444 4px,
+      #ff4444 8px
+    )
+    1;
+}
+
+/* NEXT ROUND blinking */
+
+@keyframes next-round-blink {
+  0% {
+    box-shadow: 0 0 0 0 rgba(77, 163, 255, 0.0);
+    transform: translateY(0);
+  }
+  100% {
+    box-shadow: 0 0 0 6px rgba(77, 163, 255, 0.35);
+    transform: translateY(-1px);
+  }
+}
+
+.btn-next-round-blink {
+  animation: next-round-blink 1.4s ease-in-out infinite alternate;
 }
 
 /* Slider */
@@ -363,6 +413,15 @@ body {
   background: #222633;
   border: 1px solid #383f4c;
   font-size: 0.96rem;
+}
+
+.round-feedback-completed {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(77, 163, 255, 0.3);
+}
+
+.round-feedback-completed .feedback-main {
+  font-size: 1.12rem;
 }
 
 .feedback-main {
