@@ -35,14 +35,14 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
           onClick={onStartExam}
           disabled={!canStartExam}
         >
-          START EXAMINATION
+          Start Examination
         </button>
         <div className="interval-selector-buttons">
           <button className="btn btn-ghost" onClick={onSelectAll}>
-            SELECT ALL
+            Select All
           </button>
           <button className="btn btn-ghost" onClick={onSelectNone}>
-            SELECT NONE
+            Select None
           </button>
         </div>
       </div>
@@ -55,7 +55,7 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
 
       <div className="interval-groups">
         <div className="interval-group">
-          <h3>BASE JI INTERVALS</h3>
+          <h3>Base JI intervals</h3>
           <ul className="interval-list">
             {basics.map((interval) => (
               <li key={interval.id} className="interval-item">
@@ -78,7 +78,7 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
         </div>
 
         <div className="interval-group">
-          <h3>COMPOSED INTERVALS (OCTAVE +)</h3>
+          <h3>Composed intervals (octave +)</h3>
           <ul className="interval-list">
             {composed.map((interval) => (
               <li key={interval.id} className="interval-item">
