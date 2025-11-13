@@ -6,6 +6,8 @@ interface StatusBarProps {
   totalRounds: number;
   passThreshold: number;
   sessionComplete: boolean;
+  globalElapsedSeconds: number;
+  roundRemainingSeconds: number;
 }
 
 const StatusBar: React.FC<StatusBarProps> = ({
@@ -13,41 +15,57 @@ const StatusBar: React.FC<StatusBarProps> = ({
   currentRound,
   totalRounds,
   passThreshold,
-  sessionComplete
+  sessionComplete,
+  globalElapsedSeconds,
+  roundRemainingSeconds
 }) => {
+  const scoreDisplay = `${score.toFixed(1)} / 100`;
+  const roundDisplay = `${currentRound} / ${totalRounds}`;
   const pass = score >= passThreshold;
-  const statusText = sessionComplete
-    ? pass
-      ? "Session result: PASS"
-      : "Session result: FAIL"
-    : pass
-    ? "On track"
-    : "Keep tuning";
+
+  const mins = Math.floor(globalElapsedSeconds / 60);
+  const secs = Math.floor(globalElapsedSeconds % 60);
+  const globalTimeStr = `${mins.toString().padStart(2, "0")}:${secs
+    .toString()
+    .padStart(2, "0")}`;
+
+  const clampedRoundRem = Math.max(0, roundRemainingSeconds);
+  const whole = Math.floor(clampedRoundRem);
+  const centi = Math.floor((clampedRoundRem - whole) * 100);
+  const roundTimeStr = `${whole.toString().padStart(2, "0")}.${centi
+    .toString()
+    .padStart(2, "0")}`;
 
   return (
-    <div className="status-bar card">
+    <div className="status-bar">
       <div className="status-item">
-        <span className="status-label">Score</span>
-        <span className="status-value score">
-          {score.toFixed(0)} / 100
+        <span className="status-label">SCORE</span>
+        <span className="status-value score">{scoreDisplay}</span>
+      </div>
+      <div className="status-item">
+        <span className="status-label">ROUND</span>
+        <span className="status-value">{roundDisplay}</span>
+      </div>
+      <div className="status-item timer-global">
+        <span className="status-label">TOTAL TIME</span>
+        <span className="status-value status-timer-global-value">
+          {globalTimeStr}
+        </span>
+      </div>
+      <div className="status-item timer-round">
+        <span className="status-label">TASK COUNTDOWN</span>
+        <span className="status-value status-timer-round-value">
+          {roundTimeStr}
         </span>
       </div>
       <div className="status-item">
-        <span className="status-label">Round</span>
-        <span className="status-value">
-          {Math.min(currentRound, totalRounds)} / {totalRounds}
-        </span>
-      </div>
-      <div className="status-item">
-        <span className="status-label">Pass threshold</span>
-        <span className="status-value">
-          {passThreshold}+ points
-        </span>
-      </div>
-      <div className="status-item">
-        <span className="status-label">Status</span>
-        <span className={`status-value ${pass ? "status-pass" : "status-fail"}`}>
-          {statusText}
+        <span className="status-label">RESULT</span>
+        <span
+          className={`status-value ${
+            pass ? "status-pass" : "status-fail"
+          }`}
+        >
+          {sessionComplete ? (pass ? "PASS" : "FAIL") : `TARGET ${passThreshold}+`}
         </span>
       </div>
     </div>
