@@ -330,11 +330,11 @@ const App: React.FC = () => {
   // Exam started (after clicking "START EXAMINATION").
   const [examStarted, setExamStarted] = useState(false);
 
-  // Global timer state
-  const [examStartTime, setExamStartTime] = useState<number | null>(null);
-  const [nowMs, setNowMs] = useState<number>(() => performance.now());
+  // General exam timer
+  const [examStartTimeMs, setExamStartTimeMs] = useState<number | null>(null);
+  const [examElapsedMs, setExamElapsedMs] = useState(0);
 
-  // Interval selection: default NONE selected
+  // Intervals: default = none selected
   const [selectedIntervalIds, setSelectedIntervalIds] = useState<number[]>([]);
 
   const [rounds, setRounds] = useState<RoundConfig[]>([]);
@@ -346,6 +346,13 @@ const App: React.FC = () => {
   const [roundCompleted, setRoundCompleted] = useState(false);
   const [lastResult, setLastResult] = useState<RoundResult | null>(null);
   const [sessionComplete, setSessionComplete] = useState(false);
+
+  // Per-round countdown timer
+  const [roundRemainingSeconds, setRoundRemainingSeconds] = useState<number>(
+    MAX_ROUND_DURATION_SECONDS
+  );
+
+  const roundTimerIntervalRef = useRef<number | null>(null);
 
   const [hintVisible, setHintVisible] = useState(false);
   const [hintIndexUsedThisRound, setHintIndexUsedThisRound] = useState<
@@ -359,20 +366,11 @@ const App: React.FC = () => {
     examStarted && rounds.length > 0 ? rounds[currentRoundIndex] : null;
   const normalizedScore = computeNormalizedScore(totalPoints);
 
-  // Update "now" for timers when exam is running
-  useEffect(() => {
-    if (!examStarted || examStartTime === null) return;
-    const id = window.setInterval(() => {
-      setNowMs(performance.now());
-    }, 50);
-    return () => clearInterval(id);
-  }, [examStarted, examStartTime]);
-
   // Hint window: 30-cent wide window centered on correct position
   let hintLeftPercent = 0;
   let hintWidthPercent = 0;
   if (currentRound) {
-    const halfWindowCents = 15; // 30-cent total window
+    const halfWindowCents = 15;
     const half = halfWindowCents / currentRound.sliderRangeCents;
     const start = Math.max(0, currentRound.sliderCorrectPosition - half);
     const end = Math.min(1, currentRound.sliderCorrectPosition + half);
@@ -381,11 +379,24 @@ const App: React.FC = () => {
   }
 
   useEffect(() => {
+    // General exam timer
+    if (examStartTimeMs === null) return;
+    const id = window.setInterval(() => {
+      setExamElapsedMs(performance.now() - examStartTimeMs);
+    }, 200);
+    return () => clearInterval(id);
+  }, [examStartTimeMs]);
+
+  useEffect(() => {
     return () => {
       audioEngine.stop();
       if (autoSubmitTimeoutRef.current !== null) {
         clearTimeout(autoSubmitTimeoutRef.current);
         autoSubmitTimeoutRef.current = null;
+      }
+      if (roundTimerIntervalRef.current !== null) {
+        clearInterval(roundTimerIntervalRef.current);
+        roundTimerIntervalRef.current = null;
       }
     };
   }, []);
@@ -397,12 +408,17 @@ const App: React.FC = () => {
       clearTimeout(autoSubmitTimeoutRef.current);
       autoSubmitTimeoutRef.current = null;
     }
+    if (roundTimerIntervalRef.current !== null) {
+      clearInterval(roundTimerIntervalRef.current);
+      roundTimerIntervalRef.current = null;
+    }
 
     setSliderValue(currentRound.initialSliderValue);
     setRoundStartTime(null);
     setRoundCompleted(false);
     setHintVisible(false);
     setHintIndexUsedThisRound(null);
+    setRoundRemainingSeconds(MAX_ROUND_DURATION_SECONDS);
     audioEngine.stop();
   }, [examStarted, currentRoundIndex, currentRound]);
 
@@ -413,14 +429,19 @@ const App: React.FC = () => {
     }
   };
 
+  const clearRoundTimerInterval = () => {
+    if (roundTimerIntervalRef.current !== null) {
+      clearInterval(roundTimerIntervalRef.current);
+      roundTimerIntervalRef.current = null;
+    }
+  };
+
   const startNewExamSession = () => {
     const newRounds = createSessionRounds(
       ALL_INTERVALS,
       TOTAL_ROUNDS,
       selectedIntervalIds
     );
-    const start = performance.now();
-
     setRounds(newRounds);
     setCurrentRoundIndex(0);
     setTotalPoints(0);
@@ -432,16 +453,18 @@ const App: React.FC = () => {
     setHintIndexUsedThisRound(null);
     setHintsUsedInSession(0);
     clearAutoSubmitTimer();
+    clearRoundTimerInterval();
     audioEngine.stop();
     setExamStarted(true);
-    setExamStartTime(start);
-    setNowMs(start);
+    setExamStartTimeMs(performance.now());
+    setExamElapsedMs(0);
 
     if (newRounds[0]) {
       setSliderValue(newRounds[0].initialSliderValue);
     } else {
       setSliderValue(0.5);
     }
+    setRoundRemainingSeconds(MAX_ROUND_DURATION_SECONDS);
   };
 
   const handlePlay = async () => {
@@ -451,11 +474,20 @@ const App: React.FC = () => {
 
     const now = performance.now();
     setRoundStartTime(now);
+    setRoundRemainingSeconds(MAX_ROUND_DURATION_SECONDS);
 
     clearAutoSubmitTimer();
+    clearRoundTimerInterval();
+
     autoSubmitTimeoutRef.current = window.setTimeout(() => {
       handleDone(true);
     }, MAX_ROUND_DURATION_SECONDS * 1000);
+
+    roundTimerIntervalRef.current = window.setInterval(() => {
+      const elapsed = (performance.now() - now) / 1000;
+      const remaining = Math.max(0, MAX_ROUND_DURATION_SECONDS - elapsed);
+      setRoundRemainingSeconds(remaining);
+    }, 50);
 
     const audioState = computeAudioState(currentRound, sliderValue);
     await audioEngine.startInterval(audioState);
@@ -475,6 +507,7 @@ const App: React.FC = () => {
     if (!currentRound || roundCompleted || !examStarted) return;
 
     clearAutoSubmitTimer();
+    clearRoundTimerInterval();
 
     const audioState = computeAudioState(currentRound, sliderValue);
     audioEngine.stop();
@@ -629,50 +662,36 @@ const App: React.FC = () => {
 
   const directionLabel = (errorCents: number): string => {
     const absErr = Math.abs(errorCents);
-    if (absErr <= 2) return "VERY TIGHT";
-    return errorCents > 0 ? "SHARP" : "FLAT";
+    if (absErr <= 2) return "very tight";
+    return errorCents > 0 ? "sharp" : "flat";
   };
 
   const hintAvailable = hintsUsedInSession < MAX_HINTS_PER_SESSION;
   const canStartExam = !!licenseAccepted && selectedIntervalIds.length > 0;
-
   const currentRoundDisplay = examStarted ? currentRoundIndex + 1 : 0;
 
-  // Timers
-  const globalElapsedSeconds =
-    examStarted && examStartTime !== null
-      ? Math.max(0, (nowMs - examStartTime) / 1000)
-      : 0;
-
-  let roundRemainingSeconds = MAX_ROUND_DURATION_SECONDS;
-  if (examStarted && roundStartTime !== null) {
-    if (roundCompleted) {
-      roundRemainingSeconds = 0;
-    } else {
-      const elapsed = (nowMs - roundStartTime) / 1000;
-      roundRemainingSeconds = Math.max(
-        0,
-        MAX_ROUND_DURATION_SECONDS - elapsed
-      );
-    }
+  // Round countdown formatting
+  const remaining = roundRemainingSeconds;
+  const roundTimerFormatted = `${remaining.toFixed(2)}s`;
+  let roundTimerClass = "round-timer-green";
+  if (remaining <= 10 && remaining > 5) {
+    roundTimerClass = "round-timer-warn";
+  } else if (remaining <= 5) {
+    roundTimerClass = "round-timer-danger";
   }
 
-  const feedbackClass =
-    "round-feedback" +
-    (lastResultForCurrentRound ? " round-feedback-completed" : "");
-
-  const nextRoundButtonClass =
+  const nextRoundBtnClass =
     "btn btn-ghost" +
-    (roundCompleted && !sessionComplete ? " btn-next-round-blink" : "");
+    (roundCompleted && !sessionComplete ? " btn-next-blink" : "");
 
   return (
     <div className="app-root">
       <header className="app-header">
         <div className="branding">
-          <h1>JUST INTONATION INTERVAL TRAINER</h1>
+          <h1>Just Intonation Interval Trainer</h1>
           <p className="subtitle">
-            PARIS CONSERVATOIRE-STYLE TUNING EXAM · TUNE BY EAR USING BEATS AND
-            GHOST TONES.
+            Paris Conservatoire-style tuning exam · tune by ear using beats and
+            ghost tones.
           </p>
         </div>
         <StatusBar
@@ -681,8 +700,7 @@ const App: React.FC = () => {
           totalRounds={TOTAL_ROUNDS}
           passThreshold={PASS_THRESHOLD}
           sessionComplete={sessionComplete}
-          globalElapsedSeconds={globalElapsedSeconds}
-          roundRemainingSeconds={roundRemainingSeconds}
+          examElapsedMs={examElapsedMs}
         />
       </header>
 
@@ -710,12 +728,12 @@ const App: React.FC = () => {
                 <h2>EXAMINATION NOT STARTED</h2>
               </div>
               <p className="feedback-hint">
-                1. READ THE AUDIO DISCLAIMER AND ACCEPT IT. <br />
-                2. ACCEPT THE LICENSE. <br />
-                3. ON THE LEFT, SELECT WHICH INTERVALS YOU WANT IN THE EXAM.{" "}
+                1. Read the audio disclaimer and accept it. <br />
+                2. Accept the license. <br />
+                3. On the left, select which intervals you want in the exam.{" "}
                 <br />
-                4. PRESS <strong>START EXAMINATION</strong>. <br />
-                THE TUNING PANEL AND AUDIO CONTROLS WILL THEN BECOME ACTIVE.
+                4. Press <strong>START EXAMINATION</strong>. <br />
+                The tuning panel and audio controls will then become active.
               </p>
             </>
           ) : currentRound ? (
@@ -723,7 +741,7 @@ const App: React.FC = () => {
               <div className="round-header">
                 <h2>ROUND {currentRoundIndex + 1}</h2>
                 <p className="round-interval-name">
-                  {currentRound.interval.name.toUpperCase()}{" "}
+                  {currentRound.interval.name}{" "}
                   <span className="round-interval-ratio">
                     ({ratioToString(currentRound.interval.ratio)})
                   </span>
@@ -746,9 +764,9 @@ const App: React.FC = () => {
                   </span>
                 </div>
                 <div className="round-meta-item">
-                  <span className="meta-label">SESSION MODE</span>
-                  <span className="meta-value">
-                    {TOTAL_ROUNDS} ROUNDS · PASS AT {PASS_THRESHOLD}+ POINTS
+                  <span className="meta-label">TASK TIME LEFT</span>
+                  <span className={`meta-value round-timer ${roundTimerClass}`}>
+                    {roundTimerFormatted}
                   </span>
                 </div>
               </div>
@@ -767,7 +785,7 @@ const App: React.FC = () => {
                     onClick={handlePanicStop}
                     disabled={sessionComplete || roundCompleted}
                   >
-                    PANIC / STOP SOUND
+                    PANICK / STOP SOUND
                   </button>
                 </div>
 
@@ -779,7 +797,7 @@ const App: React.FC = () => {
                   DONE
                 </button>
                 <button
-                  className="btn btn-ghost btn-hint"
+                  className="btn btn-hint"
                   onClick={handleHint}
                   disabled={
                     sessionComplete ||
@@ -791,7 +809,7 @@ const App: React.FC = () => {
                   💡 HINT
                 </button>
                 <button
-                  className={nextRoundButtonClass}
+                  className={nextRoundBtnClass}
                   onClick={handleNextRound}
                   disabled={!roundCompleted && !sessionComplete}
                 >
@@ -827,43 +845,47 @@ const App: React.FC = () => {
                   )}
                 </div>
                 <p className="slider-helper">
-                  MOVE SLOWLY UNTIL THE BEATS CALM DOWN AND THE SOUND FEELS{" "}
-                  <em>STEADY</em>. THE CORRECT TUNING POINT IS DIFFERENT EVERY
-                  ROUND AND IS <strong>NOT</strong> VISUALLY MARKED. THE{" "}
-                  <strong>HINT</strong> BUTTON REVEALS A{" "}
-                  <strong>30-CENT WIDE</strong> WINDOW CENTERED ON THE CORRECT
-                  ANSWER; HINTS ARE LIMITED AND BECOME MORE EXPENSIVE AS YOU USE
-                  THEM.
+                  Move slowly until the beats calm down and the sound feels{" "}
+                  <em>steady</em>. The correct tuning point is different every
+                  round and is <strong>not</strong> visually marked. The{" "}
+                  <strong>HINT</strong> button reveals a{" "}
+                  <strong>30-cent wide</strong> window centered on the correct
+                  answer; hints are limited and become more expensive as you use
+                  them.
                 </p>
                 {!hintAvailable && (
                   <p className="slider-helper">
-                    HINT QUOTA USED:{" "}
-                    <strong>{MAX_HINTS_PER_SESSION}</strong> /
-                    {MAX_HINTS_PER_SESSION}. NO MORE HINTS AVAILABLE THIS
-                    SESSION.
+                    Hint quota used: <strong>{MAX_HINTS_PER_SESSION}</strong> /
+                    {MAX_HINTS_PER_SESSION}. No more hints available this
+                    session.
                   </p>
                 )}
               </div>
 
-              <div className={feedbackClass}>
+              <div
+                className={
+                  "round-feedback" +
+                  (lastResultForCurrentRound ? " round-feedback-active" : "")
+                }
+              >
                 {lastResultForCurrentRound ? (
                   <>
                     <h3>ROUND RESULT</h3>
-                    <p className="feedback-main">
+                    <p className="feedback-main feedback-main-large">
                       TUNING ERROR:{" "}
-                      <strong>
+                      <span className="feedback-error-cents">
                         {Math.abs(lastResultForCurrentRound.errorCents).toFixed(
                           2
                         )}{" "}
                         CENTS
-                      </strong>{" "}
+                      </span>{" "}
                       (
                       {directionLabel(
                         lastResultForCurrentRound.errorCents
-                      )}
+                      ).toUpperCase()}
                       )
                     </p>
-                    <p className="feedback-sub">
+                    <p className="feedback-sub feedback-sub-large">
                       TIME (CAPPED AT {MAX_ROUND_DURATION_SECONDS}S):{" "}
                       <strong>
                         {lastResultForCurrentRound.timeSeconds.toFixed(2)} S
@@ -884,12 +906,12 @@ const App: React.FC = () => {
                   </>
                 ) : (
                   <p className="feedback-hint">
-                    PRESS <strong>PLAY</strong>, LISTEN, GENTLY MOVE THE SLIDER,
-                    THEN HIT <strong>DONE</strong> WHEN YOU FEEL THE INTERVAL
-                    LOCK IN. IF YOU WAIT MORE THAN{" "}
+                    Press <strong>PLAY</strong>, listen, gently move the slider,
+                    then hit <strong>DONE</strong> when you feel the interval
+                    lock in. If you wait more than{" "}
                     {MAX_ROUND_DURATION_SECONDS}
-                    S, THE SYSTEM WILL AUTO-SUBMIT YOUR CURRENT TUNING FOR THIS
-                    ROUND.
+                    s, the system will auto-submit your current tuning for this
+                    round.
                   </p>
                 )}
               </div>
@@ -897,7 +919,7 @@ const App: React.FC = () => {
               {sessionComplete && (
                 <div className="session-summary">
                   <h3>SESSION COMPLETE</h3>
-                  <p>
+                  <p className="session-summary-main">
                     FINAL SCORE:{" "}
                     <strong>
                       {normalizedScore.toFixed(1)} / 100 –{" "}
@@ -905,10 +927,10 @@ const App: React.FC = () => {
                     </strong>
                   </p>
                   <p className="session-summary-text">
-                    YOU CAN RESTART TO GET A FRESH EXAM USING THE CURRENTLY
-                    SELECTED INTERVALS ON THE LEFT. SCORING IS NORMALIZED SO{" "}
-                    <strong>210 POINTS</strong> (ALL WORLD-CLASS &amp; FAST)
-                    MAPS TO <strong>100/100</strong>.
+                    You can restart to get a fresh exam using the currently
+                    selected intervals on the left. Scoring is normalized so{" "}
+                    <strong>210 POINTS</strong> (all world-class &amp; fast)
+                    maps to <strong>100/100</strong>.
                   </p>
                 </div>
               )}
@@ -928,18 +950,18 @@ const App: React.FC = () => {
             <h2>AUDIO DISCLAIMER – USE HEADPHONES</h2>
             <div className="license-scroll">
               <p>
-                FOR ACCURATE TUNING AND TO PROTECT YOUR EARS,{" "}
-                <strong>PLEASE USE GOOD-QUALITY HEADPHONES</strong> AT A
-                MODERATE VOLUME.
+                For accurate tuning and to protect your ears,{" "}
+                <strong>please use good-quality headphones</strong> at a
+                moderate volume.
               </p>
               <p>
-                THIS EXAM USES STEADY PURE TONES THAT CAN BECOME FATIGUING AT
-                HIGH LEVELS. IF YOU FEEL ANY DISCOMFORT,{" "}
-                <strong>STOP IMMEDIATELY</strong> AND TAKE A BREAK.
+                This exam uses steady pure tones that can become fatiguing at
+                high levels. If you feel any discomfort,{" "}
+                <strong>stop immediately</strong> and take a break.
               </p>
               <p>
-                YOU CAN USE THE TEST BELOW TO MAKE SURE YOUR HEADPHONES ARE
-                WORKING AND THE LEVEL FEELS COMFORTABLE BEFORE YOU START.
+                You can use the test below to make sure your headphones are
+                working and the level feels comfortable before you start.
               </p>
             </div>
             <div className="license-actions">
@@ -997,8 +1019,8 @@ const App: React.FC = () => {
           <div className="blocked-message">
             <h2>LICENSE NOT ACCEPTED</h2>
             <p>
-              YOU DID NOT ACCEPT THE TESTING-ONLY, NO-COPY SOFTWARE LICENSE
-              (CTOL V1.0). THE APPLICATION IS BLOCKED AND CANNOT BE USED.
+              You did not accept the Testing-Only, No-Copy Software License
+              (CTOL v1.0). The application is blocked and cannot be used.
             </p>
           </div>
         </div>
