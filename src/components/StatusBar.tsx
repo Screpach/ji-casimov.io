@@ -6,7 +6,22 @@ interface StatusBarProps {
   totalRounds: number;
   passThreshold: number;
   sessionComplete: boolean;
-  examElapsedMs: number;
+  elapsedExamMs: number | null;
+}
+
+function formatScore(score: number): string {
+  return score.toFixed(1);
+}
+
+function formatExamTime(ms: number | null): string {
+  if (ms === null) return "--:--";
+  const total = Math.max(0, ms);
+  const sec = Math.floor(total / 1000);
+  const min = Math.floor(sec / 60);
+  const remSec = sec % 60;
+  return `${min.toString().padStart(2, "0")}:${remSec
+    .toString()
+    .padStart(2, "0")}`;
 }
 
 const StatusBar: React.FC<StatusBarProps> = ({
@@ -15,44 +30,40 @@ const StatusBar: React.FC<StatusBarProps> = ({
   totalRounds,
   passThreshold,
   sessionComplete,
-  examElapsedMs
+  elapsedExamMs
 }) => {
-  const totalSeconds = Math.floor(examElapsedMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  const timerLabel = `${minutes}:${seconds.toString().padStart(2, "0")}`;
-
-  const passState =
+  const passStatus =
     sessionComplete && score >= passThreshold ? "PASS" : "TARGET";
 
   return (
     <div className="status-bar card">
       <div className="status-item">
-        <span className="status-label">SCORE</span>
+        <span className="status-label">Score</span>
         <span className="status-value score">
-          {score.toFixed(1)} / 100
+          {formatScore(score)} / 100
         </span>
       </div>
       <div className="status-item">
-        <span className="status-label">ROUND</span>
+        <span className="status-label">Round</span>
         <span className="status-value">
           {currentRound} / {totalRounds}
         </span>
       </div>
       <div className="status-item">
-        <span className="status-label">{passState}</span>
+        <span className="status-label">Pass threshold</span>
         <span
-          className={
-            "status-value " +
-            (score >= passThreshold ? "status-pass" : "status-fail")
-          }
+          className={`status-value ${
+            score >= passThreshold ? "status-pass" : "status-fail"
+          }`}
         >
-          {passThreshold.toFixed(0)}+
+          {passStatus} {passThreshold}+
         </span>
       </div>
       <div className="status-item">
-        <span className="status-label">EXAM TIME</span>
-        <span className="status-value status-timer">{timerLabel}</span>
+        <span className="status-label">Exam time</span>
+        <span className="status-value status-exam-timer">
+          {formatExamTime(elapsedExamMs)}
+        </span>
       </div>
     </div>
   );
