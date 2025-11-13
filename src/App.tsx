@@ -721,7 +721,7 @@ const App: React.FC = () => {
                     className="btn btn-panic"
                     onClick={handlePanicStop}
                   >
-                    PANICK / Stop Sound
+                    PANIC / Stop Sound
                   </button>
                 </div>
 
