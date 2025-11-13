@@ -39,23 +39,23 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
         </button>
         <div className="interval-selector-buttons">
           <button className="btn btn-ghost" onClick={onSelectAll}>
-            Select All
+            SELECT ALL
           </button>
           <button className="btn btn-ghost" onClick={onSelectNone}>
-            Select None
+            SELECT NONE
           </button>
         </div>
       </div>
 
       <p className="interval-selector-subtitle">
-        Choose which intervals are part of this exam. Then press{" "}
-        <strong>START EXAMINATION</strong>. You can restart the exam later with
-        the same selection.
+        CHOOSE WHICH INTERVALS ARE PART OF THIS EXAM. THEN PRESS{" "}
+        <strong>START EXAMINATION</strong>. YOU CAN RESTART THE EXAM LATER WITH
+        THE SAME SELECTION.
       </p>
 
       <div className="interval-groups">
         <div className="interval-group">
-          <h3>Base JI intervals</h3>
+          <h3>BASE JI INTERVALS</h3>
           <ul className="interval-list">
             {basics.map((interval) => (
               <li key={interval.id} className="interval-item">
@@ -66,7 +66,9 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
                     onChange={() => onToggleInterval(interval.id)}
                   />
                   <span className="interval-text">
-                    <span className="interval-name">{interval.name}</span>
+                    <span className="interval-name">
+                      {interval.name.toUpperCase()}
+                    </span>
                     <span className="interval-ratio">
                       {ratioToString(interval.ratio)}
                     </span>
@@ -78,7 +80,7 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
         </div>
 
         <div className="interval-group">
-          <h3>Composed intervals (octave +)</h3>
+          <h3>COMPOSED INTERVALS (OCTAVE +)</h3>
           <ul className="interval-list">
             {composed.map((interval) => (
               <li key={interval.id} className="interval-item">
@@ -89,7 +91,9 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
                     onChange={() => onToggleInterval(interval.id)}
                   />
                   <span className="interval-text">
-                    <span className="interval-name">{interval.name}</span>
+                    <span className="interval-name">
+                      {interval.name.toUpperCase()}
+                    </span>
                     <span className="interval-ratio">
                       {ratioToString(interval.ratio)}
                     </span>
@@ -102,19 +106,19 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
       </div>
 
       <p className="interval-selector-footnote">
-        Active in exam: <strong>{activeCount}</strong> interval
-        {activeCount === 1 ? "" : "s"}.
+        ACTIVE IN EXAM: <strong>{activeCount}</strong> INTERVAL
+        {activeCount === 1 ? "" : "S"}.
         {!canStartExam && (
           <>
             {" "}
-            Select at least one interval to enable{" "}
+            SELECT AT LEAST ONE INTERVAL TO ENABLE{" "}
             <strong>START EXAMINATION</strong>.
           </>
         )}
         {examStarted && (
           <>
             {" "}
-            (Exam running – changes take effect on the next restart.)
+            (EXAM RUNNING – CHANGES TAKE EFFECT ON THE NEXT RESTART.)
           </>
         )}
       </p>
