@@ -48,9 +48,9 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
       </div>
 
       <p className="interval-selector-subtitle">
-        CHOOSE WHICH INTERVALS ARE PART OF THIS EXAM. THEN PRESS{" "}
-        <strong>START EXAMINATION</strong>. YOU CAN RESTART THE EXAM LATER WITH
-        THE SAME SELECTION.
+        Choose which intervals are part of this exam. Then press{" "}
+        <strong>START EXAMINATION</strong>. You can restart the exam later with
+        the same selection.
       </p>
 
       <div className="interval-groups">
@@ -66,9 +66,7 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
                     onChange={() => onToggleInterval(interval.id)}
                   />
                   <span className="interval-text">
-                    <span className="interval-name">
-                      {interval.name.toUpperCase()}
-                    </span>
+                    <span className="interval-name">{interval.name}</span>
                     <span className="interval-ratio">
                       {ratioToString(interval.ratio)}
                     </span>
@@ -91,9 +89,7 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
                     onChange={() => onToggleInterval(interval.id)}
                   />
                   <span className="interval-text">
-                    <span className="interval-name">
-                      {interval.name.toUpperCase()}
-                    </span>
+                    <span className="interval-name">{interval.name}</span>
                     <span className="interval-ratio">
                       {ratioToString(interval.ratio)}
                     </span>
@@ -106,19 +102,19 @@ const IntervalSelectorPanel: React.FC<IntervalSelectorPanelProps> = ({
       </div>
 
       <p className="interval-selector-footnote">
-        ACTIVE IN EXAM: <strong>{activeCount}</strong> INTERVAL
-        {activeCount === 1 ? "" : "S"}.
+        Active in exam: <strong>{activeCount}</strong> interval
+        {activeCount === 1 ? "" : "s"}.
         {!canStartExam && (
           <>
             {" "}
-            SELECT AT LEAST ONE INTERVAL TO ENABLE{" "}
+            Select at least one interval to enable{" "}
             <strong>START EXAMINATION</strong>.
           </>
         )}
         {examStarted && (
           <>
             {" "}
-            (EXAM RUNNING – CHANGES TAKE EFFECT ON THE NEXT RESTART.)
+            (Exam running – changes take effect on the next restart.)
           </>
         )}
       </p>
