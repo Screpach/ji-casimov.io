@@ -72,6 +72,10 @@ body {
   margin-top: 4px;
 }
 
+.app-main--results-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 @media (max-width: 960px) {
   .app-main {
     grid-template-columns: 1fr;
@@ -226,6 +230,12 @@ body {
 }
 
 .controls-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.controls-secondary {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -693,6 +703,11 @@ body {
   margin-bottom: 6px;
 }
 
+.results-summary {
+  margin: 4px 0 8px;
+  font-size: 0.94rem;
+}
+
 .results-table {
   width: 100%;
   border-collapse: collapse;
@@ -747,5 +762,26 @@ body {
   gap: 8px;
 }
 
-/* Print (optional): you can tweak which parts are printed if desired */
-/* For now, let the browser handle defaults. */
+/* Print: only print results panel */
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #results-print,
+  #results-print * {
+    visibility: visible;
+  }
+
+  #results-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  .app-root {
+    padding: 0;
+  }
+}
