@@ -328,24 +328,24 @@ function formatRoundCountdown(msLeft: number | null): string {
 }
 
 const App: React.FC = () => {
-  // DISCLAIMER (headphones) – must acknowledge before license.
+  // DISCLAIMER (headphones)
   const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false);
   const [isHeadphoneTestPlaying, setIsHeadphoneTestPlaying] = useState(false);
 
-  // LICENSE: null = undecided; true = accepted; false = rejected/blocked.
+  // LICENSE
   const [licenseAccepted, setLicenseAccepted] = useState<boolean | null>(null);
 
-  // EXAM: started after "START EXAMINATION".
+  // EXAM
   const [examStarted, setExamStarted] = useState(false);
 
-  // Exam timer (from START EXAMINATION).
+  // Global exam timer
   const [examElapsedMs, setExamElapsedMs] = useState(0);
   const examTimerIntervalRef = useRef<number | null>(null);
 
-  // Interval selection – default: NONE selected until user chooses.
+  // Interval selection – default NONE selected
   const [selectedIntervalIds, setSelectedIntervalIds] = useState<number[]>([]);
 
-  // Rounds & scoring.
+  // Rounds & scoring
   const [rounds, setRounds] = useState<RoundConfig[]>([]);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [sliderValue, setSliderValue] = useState(0.5);
@@ -357,27 +357,31 @@ const App: React.FC = () => {
   const [roundResults, setRoundResults] = useState<RoundResult[]>([]);
   const [sessionComplete, setSessionComplete] = useState(false);
 
-  // Hint system.
+  // Hint system
   const [hintVisible, setHintVisible] = useState(false);
   const [hintIndexUsedThisRound, setHintIndexUsedThisRound] = useState<
     number | null
   >(null);
   const [hintsUsedInSession, setHintsUsedInSession] = useState(0);
 
-  // Auto-submit for round & round countdown timer.
+  // Round auto-submit and countdown
   const autoSubmitTimeoutRef = useRef<number | null>(null);
   const [roundTimeLeftMs, setRoundTimeLeftMs] = useState<number | null>(null);
   const roundTimerIntervalRef = useRef<number | null>(null);
 
   const currentRound =
     examStarted && rounds.length > 0 ? rounds[currentRoundIndex] : null;
+
   const normalizedScore = computeNormalizedScore(totalPoints);
 
-  // Hint window: 30-cent wide window centered on correct slider position.
+  const resultsComplete =
+    sessionComplete && roundResults.length === TOTAL_ROUNDS;
+
+  // Hint window placement
   let hintLeftPercent = 0;
   let hintWidthPercent = 0;
   if (currentRound) {
-    const halfWindowCents = 15; // total 30 cents
+    const halfWindowCents = 15;
     const half = halfWindowCents / currentRound.sliderRangeCents;
     const start = Math.max(0, currentRound.sliderCorrectPosition - half);
     const end = Math.min(1, currentRound.sliderCorrectPosition + half);
@@ -484,7 +488,6 @@ const App: React.FC = () => {
     clearAutoSubmitTimer();
     clearRoundTimer();
 
-    // Countdown timer (sec:centisec)
     const start = Date.now();
     setRoundTimeLeftMs(MAX_ROUND_DURATION_SECONDS * 1000);
     roundTimerIntervalRef.current = window.setInterval(() => {
@@ -652,12 +655,12 @@ const App: React.FC = () => {
     const state: IntervalAudioState = {
       f1Hz: 440,
       f2Hz: 660,
-      errorCents: 0,
-      // @ts-ignore – extra fields used by DSP, harmless.
-      centsOffset: 0,
-      // @ts-ignore
-      rActual: 1.5
+      errorCents: 0
     };
+    // @ts-ignore
+    state.centsOffset = 0;
+    // @ts-ignore
+    state.rActual = 1.5;
     await audioEngine.startInterval(state);
     setIsHeadphoneTestPlaying(true);
   };
@@ -678,7 +681,7 @@ const App: React.FC = () => {
   };
 
   const handleSaveResultsPdf = () => {
-    // Let the browser's Print > "Save as PDF" handle the actual PDF.
+    // Print only the results panel; CSS @media print will scope visibility.
     window.print();
   };
 
@@ -704,26 +707,120 @@ const App: React.FC = () => {
   const roundTimerCritical =
     roundTimeLeftMs !== null && roundTimeLeftMs <= 5000 && roundTimeLeftMs > 0;
 
-  // Progress data for results graph.
-  const resultsComplete =
-    sessionComplete && roundResults.length === TOTAL_ROUNDS;
-
-  const progressPolyline = (() => {
+  // Results graph: per-round deltaScore, center = 0 at y=50
+  const maxAbsDelta = 7;
+  const deltaPolyline = (() => {
     if (!resultsComplete) return "";
-    let runningTotal = 0;
     const points: string[] = [];
     for (let i = 0; i < roundResults.length; i++) {
-      runningTotal += roundResults[i].deltaScore;
-      const norm = computeNormalizedScore(runningTotal);
+      const delta = roundResults[i].deltaScore;
       const x =
         TOTAL_ROUNDS > 1
           ? (i / (TOTAL_ROUNDS - 1)) * 100
           : 0;
-      const y = 100 - norm; // invert for SVG
+      const y = 50 - (delta / maxAbsDelta) * 40; // +delta up, -delta down
       points.push(`${x},${y}`);
     }
     return points.join(" ");
   })();
+
+  const resultsPanel = resultsComplete ? (
+    <div className="results-panel" id="results-print">
+      <h3>Full Results (30 Tasks)</h3>
+      <p className="results-summary">
+        Total raw points: <strong>{totalPoints}</strong> · Normalized exam
+        score: <strong>{normalizedScore.toFixed(1)} / 100</strong>
+      </p>
+
+      <table className="results-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Interval</th>
+            <th>Error (cents)</th>
+            <th>Time (s)</th>
+            <th>Δ Points</th>
+          </tr>
+        </thead>
+        <tbody>
+          {roundResults.map((r) => {
+            const roundIndex = r.roundIndex + 1;
+            const intervalName =
+              rounds[r.roundIndex]?.interval.name ?? "—";
+            const absErr = Math.abs(r.errorCents).toFixed(2);
+            const time = r.timeSeconds.toFixed(2);
+            const delta = r.deltaScore;
+            const deltaClass =
+              delta > 0
+                ? "round-positive"
+                : delta < 0
+                ? "round-negative"
+                : "";
+            return (
+              <tr key={r.roundIndex}>
+                <td>{roundIndex}</td>
+                <td>{intervalName}</td>
+                <td>{absErr}</td>
+                <td>{time}</td>
+                <td className={deltaClass}>
+                  {delta > 0 ? `+${delta}` : delta}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <div className="results-graph">
+        <p className="results-graph-label">
+          Per-round score (center line = 0 points)
+        </p>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <rect x="0" y="0" width="100" height="100" fill="#11141d" />
+          {/* Grid lines */}
+          <polyline
+            points="0,10 100,10"
+            stroke="#303545"
+            strokeWidth="0.3"
+            fill="none"
+          />
+          <polyline
+            points="0,50 100,50"
+            stroke="#505a6c"
+            strokeWidth="0.6"
+            fill="none"
+          />
+          <polyline
+            points="0,90 100,90"
+            stroke="#303545"
+            strokeWidth="0.3"
+            fill="none"
+          />
+          {/* Label text is handled outside; here just the curve */}
+          {deltaPolyline && (
+            <polyline
+              points={deltaPolyline}
+              stroke="#4da3ff"
+              strokeWidth="1.4"
+              fill="none"
+            />
+          )}
+        </svg>
+      </div>
+
+      <div className="results-actions">
+        <button
+          className="btn btn-secondary"
+          onClick={handleSaveResultsPdf}
+        >
+          Save Results In PDF
+        </button>
+        <button className="btn btn-panic" onClick={handleResetPage}>
+          Reset
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div className="app-root">
@@ -737,7 +834,7 @@ const App: React.FC = () => {
         </div>
         <StatusBar
           score={normalizedScore}
-          currentRound={currentRoundDisplay}
+          currentRound={examStarted ? currentRoundDisplay : 0}
           totalRounds={TOTAL_ROUNDS}
           passThreshold={PASS_THRESHOLD}
           sessionComplete={sessionComplete}
@@ -745,387 +842,283 @@ const App: React.FC = () => {
         />
       </header>
 
-      <main className="app-main">
-        {/* LEFT: interval selector + explanation */}
-        <aside className="side-column">
-          <IntervalSelectorPanel
-            intervals={ALL_INTERVALS}
-            selectedIntervalIds={selectedIntervalIds}
-            onToggleInterval={handleToggleInterval}
-            onSelectAll={handleSelectAllIntervals}
-            onSelectNone={handleSelectNoneIntervals}
-            onStartExam={handleStartExam}
-            examStarted={examStarted}
-            canStartExam={canStartExam}
-          />
-          {examStarted && <ExplanationPanel />}
-        </aside>
-
-        {/* RIGHT: game panel */}
-        <section className="game-panel card">
-          {!examStarted ? (
-            <>
-              <div className="round-header">
-                <h2>Examination not started</h2>
-              </div>
-              <p className="feedback-hint">
-                1. Read the audio disclaimer and accept it. <br />
-                2. Accept the license. <br />
-                3. On the left, select which intervals you want in the exam.{" "}
-                <br />
-                4. Press <strong>START EXAMINATION</strong>. <br />
-                The tuning panel and audio controls will then become active.
+      <main
+        className={`app-main ${
+          resultsComplete ? "app-main--results-only" : ""
+        }`}
+      >
+        {resultsComplete ? (
+          <section className="game-panel card">
+            <div className="session-summary">
+              <h3>Session Complete</h3>
+              <p>
+                Final score:{" "}
+                <strong>
+                  {normalizedScore.toFixed(1)} / 100 –{" "}
+                  {normalizedScore >= PASS_THRESHOLD ? "PASS ✅" : "FAIL ❌"}
+                </strong>
               </p>
-            </>
-          ) : currentRound ? (
-            <>
-              <div className="round-header">
-                <h2>Round {currentRoundIndex + 1}</h2>
-                <p className="round-interval-name">
-                  {currentRound.interval.name}{" "}
-                  <span className="round-interval-ratio">
-                    ({ratioToString(currentRound.interval.ratio)})
-                  </span>
-                </p>
-              </div>
+              <p className="session-summary-text">
+                Below you can review every task, see your per-round score
+                relative to zero, and export a PDF of the results.
+              </p>
+            </div>
+            {resultsPanel}
+          </section>
+        ) : (
+          <>
+            {/* LEFT: interval selector (until exam starts) + explanation */}
+            <aside className="side-column">
+              {!examStarted && (
+                <IntervalSelectorPanel
+                  intervals={ALL_INTERVALS}
+                  selectedIntervalIds={selectedIntervalIds}
+                  onToggleInterval={handleToggleInterval}
+                  onSelectAll={handleSelectAllIntervals}
+                  onSelectNone={handleSelectNoneIntervals}
+                  onStartExam={handleStartExam}
+                  examStarted={examStarted}
+                  canStartExam={canStartExam}
+                />
+              )}
+              {examStarted && <ExplanationPanel />}
+            </aside>
 
-              <div className="round-meta">
-                <div className="round-meta-item">
-                  <span className="meta-label">Anchor note</span>
-                  <span className="meta-value">
-                    {currentRound.baseFreqHz.toFixed(1)} Hz
-                  </span>
-                </div>
-                <div className="round-meta-item">
-                  <span className="meta-label">You tune</span>
-                  <span className="meta-value">
-                    {currentRound.tuneUpper
-                      ? "Upper (higher) note"
-                      : "Lower (bass) note"}
-                  </span>
-                </div>
-                <div className="round-meta-item">
-                  <span className="meta-label">Session mode</span>
-                  <span className="meta-value">
-                    {TOTAL_ROUNDS} rounds · pass at {PASS_THRESHOLD}+ points
-                  </span>
-                </div>
-              </div>
-
-              <div className="round-timers">
-                <span className="round-timer-label">Task countdown</span>
-                <span
-                  className={`round-timer-value ${
-                    roundTimerCritical
-                      ? "round-timer-critical"
-                      : "round-timer-ok"
-                  }`}
-                >
-                  {formatRoundCountdown(roundTimeLeftMs)}
-                </span>
-              </div>
-
-              <div className="controls-row">
-                <div className="controls-main">
-                  <button
-                    className="btn btn-primary"
-                    onClick={handlePlay}
-                    disabled={sessionComplete || roundCompleted}
-                  >
-                    ▶ Play
-                  </button>
-                  <button
-                    className="btn btn-panic"
-                    onClick={handlePanicStop}
-                    disabled={sessionComplete || roundCompleted}
-                  >
-                    Panick / Stop Sound
-                  </button>
-                </div>
-
-                <button
-                  className="btn btn-secondary btn-done"
-                  onClick={() => handleDone(false)}
-                  disabled={sessionComplete || roundCompleted}
-                >
-                  Done
-                </button>
-                <button
-                  className="btn btn-hint"
-                  onClick={handleHint}
-                  disabled={
-                    sessionComplete ||
-                    hintVisible ||
-                    roundCompleted ||
-                    !hintAvailable
-                  }
-                >
-                  💡 Hint
-                </button>
-                <button
-                  className={`btn btn-ghost btn-next-round ${
-                    roundCompleted && !sessionComplete
-                      ? "btn-next-round--blink"
-                      : ""
-                  }`}
-                  onClick={handleNextRound}
-                  disabled={!roundCompleted && !sessionComplete}
-                >
-                  {sessionComplete ? "Restart Session" : "Next Round"}
-                </button>
-              </div>
-
-              <div className="slider-block">
-                <label htmlFor="tuning-slider" className="slider-label">
-                  Tuning slider
-                </label>
-                <div className="slider-wrapper">
-                  <input
-                    id="tuning-slider"
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.001}
-                    value={sliderValue}
-                    onChange={handleSliderChange}
-                    className="tuning-slider"
-                  />
-                  {hintVisible && (
-                    <div className="slider-hint-bar">
-                      <div
-                        className="slider-hint-window"
-                        style={{
-                          left: `${hintLeftPercent}%`,
-                          width: `${hintWidthPercent}%`
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-                <p className="slider-helper">
-                  Move slowly until the beats calm down and the sound feels{" "}
-                  <em>steady</em>. The correct tuning point is different every
-                  round and is <strong>not</strong> visually marked. The{" "}
-                  <strong>Hint</strong> button reveals a{" "}
-                  <strong>30-cent wide</strong> window centered on the correct
-                  answer; hints are limited and become more expensive as you use
-                  them.
-                </p>
-                {!hintAvailable && (
-                  <p className="slider-helper">
-                    Hint quota used: <strong>{MAX_HINTS_PER_SESSION}</strong> /
-                    {MAX_HINTS_PER_SESSION}. No more hints available this
-                    session.
-                  </p>
-                )}
-              </div>
-
-              <div
-                className={`round-feedback ${
-                  lastResultForCurrentRound ? "round-feedback--active" : ""
-                }`}
-              >
-                {lastResultForCurrentRound ? (
-                  <>
-                    <h3>Round result</h3>
-                    <p className="feedback-main">
-                      Tuning error:{" "}
-                      <strong>
-                        {Math.abs(lastResultForCurrentRound.errorCents).toFixed(
-                          2
-                        )}{" "}
-                        cents
-                      </strong>{" "}
-                      (
-                      {directionLabel(
-                        lastResultForCurrentRound.errorCents
-                      )}
-                      )
-                    </p>
-                    <p className="feedback-sub">
-                      Time (capped at {MAX_ROUND_DURATION_SECONDS}s):{" "}
-                      <strong>
-                        {lastResultForCurrentRound.timeSeconds.toFixed(2)} s
-                      </strong>{" "}
-                      · Round score change:{" "}
-                      <strong>
-                        {lastResultForCurrentRound.deltaScore > 0 ? "+" : ""}
-                        {lastResultForCurrentRound.deltaScore}
-                      </strong>
-                    </p>
-                    <ul className="feedback-list">
-                      {lastResultForCurrentRound.contributions.map(
-                        (c, idx) => (
-                          <li key={idx}>{c}</li>
-                        )
-                      )}
-                    </ul>
-                  </>
-                ) : (
+            {/* RIGHT: game panel */}
+            <section className="game-panel card">
+              {!examStarted ? (
+                <>
+                  <div className="round-header">
+                    <h2>Examination not started</h2>
+                  </div>
                   <p className="feedback-hint">
-                    Press <strong>PLAY</strong>, listen, gently move the slider,
-                    then hit <strong>DONE</strong> when you feel the interval
-                    lock in. If you wait more than{" "}
-                    {MAX_ROUND_DURATION_SECONDS}
-                    s, the system will auto-submit your current tuning for this
-                    round.
+                    1. Read the audio disclaimer and accept it. <br />
+                    2. Accept the license. <br />
+                    3. On the left, select which intervals you want in the exam.{" "}
+                    <br />
+                    4. Press <strong>START EXAMINATION</strong>. <br />
+                    The tuning panel and audio controls will then become
+                    active.
                   </p>
-                )}
-              </div>
-
-              {sessionComplete && (
-                <div className="session-summary">
-                  <h3>Session complete</h3>
-                  <p>
-                    Final score:{" "}
-                    <strong>
-                      {normalizedScore.toFixed(1)} / 100 –{" "}
-                      {normalizedScore >= PASS_THRESHOLD ? "PASS ✅" : "FAIL ❌"}
-                    </strong>
-                  </p>
-                  <p className="session-summary-text">
-                    You can restart to get a fresh exam using the currently
-                    selected intervals on the left. Scoring is normalized so{" "}
-                    <strong>210 points</strong> (all world-class &amp; fast)
-                    maps to <strong>100/100</strong>.
-                  </p>
-                </div>
-              )}
-
-              {resultsComplete && (
-                <div className="results-panel" id="results-print">
-                  <h3>Full results (30 tasks)</h3>
-                  <table className="results-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Interval</th>
-                        <th>Error (cents)</th>
-                        <th>Time (s)</th>
-                        <th>Δ Points</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {roundResults.map((r) => {
-                        const roundIndex = r.roundIndex + 1;
-                        const intervalName =
-                          rounds[r.roundIndex]?.interval.name ?? "—";
-                        const absErr = Math.abs(r.errorCents).toFixed(2);
-                        const time = r.timeSeconds.toFixed(2);
-                        const delta = r.deltaScore;
-                        const deltaClass =
-                          delta > 0
-                            ? "round-positive"
-                            : delta < 0
-                            ? "round-negative"
-                            : "";
-                        return (
-                          <tr key={r.roundIndex}>
-                            <td>{roundIndex}</td>
-                            <td>{intervalName}</td>
-                            <td>{absErr}</td>
-                            <td>{time}</td>
-                            <td className={deltaClass}>
-                              {delta > 0 ? `+${delta}` : delta}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-
-                  <div className="results-graph">
-                    <p className="results-graph-label">
-                      Progress (running normalized score)
+                </>
+              ) : currentRound ? (
+                <>
+                  <div className="round-header">
+                    <h2>Round {currentRoundIndex + 1}</h2>
+                    <p className="round-interval-name">
+                      {currentRound.interval.name}{" "}
+                      <span className="round-interval-ratio">
+                        ({ratioToString(currentRound.interval.ratio)})
+                      </span>
                     </p>
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-                      <defs>
-                        <linearGradient
-                          id="progressFill"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop offset="0%" stopColor="rgba(77,163,255,0.6)" />
-                          <stop
-                            offset="100%"
-                            stopColor="rgba(77,163,255,0.0)"
-                          />
-                        </linearGradient>
-                      </defs>
-                      <rect
-                        x="0"
-                        y="0"
-                        width="100"
-                        height="100"
-                        fill="#11141d"
-                      />
-                      <polyline
-                        points="0,25 100,25"
-                        stroke="#303545"
-                        strokeWidth="0.3"
-                        fill="none"
-                      />
-                      <polyline
-                        points="0,50 100,50"
-                        stroke="#303545"
-                        strokeWidth="0.3"
-                        fill="none"
-                      />
-                      <polyline
-                        points="0,75 100,75"
-                        stroke="#303545"
-                        strokeWidth="0.3"
-                        fill="none"
-                      />
-                      {progressPolyline && (
-                        <>
-                          <polyline
-                            points={progressPolyline}
-                            stroke="#4da3ff"
-                            strokeWidth="1.2"
-                            fill="none"
-                          />
-                          <polygon
-                            points={`${progressPolyline} 100,100 0,100`}
-                            fill="url(#progressFill)"
-                          />
-                        </>
-                      )}
-                    </svg>
                   </div>
 
-                  <div className="results-actions">
-                    <button
-                      className="btn btn-secondary"
-                      onClick={handleSaveResultsPdf}
-                    >
-                      Save Results In PDF
-                    </button>
-                    <button
-                      className="btn btn-panic"
-                      onClick={handleResetPage}
-                    >
-                      Reset
-                    </button>
+                  <div className="round-meta">
+                    <div className="round-meta-item">
+                      <span className="meta-label">Anchor note</span>
+                      <span className="meta-value">
+                        {currentRound.baseFreqHz.toFixed(1)} Hz
+                      </span>
+                    </div>
+                    <div className="round-meta-item">
+                      <span className="meta-label">You tune</span>
+                      <span className="meta-value">
+                        {currentRound.tuneUpper
+                          ? "Upper (higher) note"
+                          : "Lower (bass) note"}
+                      </span>
+                    </div>
+                    <div className="round-meta-item">
+                      <span className="meta-label">Session mode</span>
+                      <span className="meta-value">
+                        {TOTAL_ROUNDS} rounds · pass at {PASS_THRESHOLD}+
+                        points
+                      </span>
+                    </div>
                   </div>
-                </div>
+
+                  <div className="round-timers">
+                    <span className="round-timer-label">Task countdown</span>
+                    <span
+                      className={`round-timer-value ${
+                        roundTimerCritical
+                          ? "round-timer-critical"
+                          : "round-timer-ok"
+                      }`}
+                    >
+                      {formatRoundCountdown(roundTimeLeftMs)}
+                    </span>
+                  </div>
+
+                  <div className="controls-row">
+                    <div className="controls-main">
+                      <button
+                        className="btn btn-primary"
+                        onClick={handlePlay}
+                        disabled={sessionComplete || roundCompleted}
+                      >
+                        ▶ Play
+                      </button>
+                      <button
+                        className="btn btn-panic"
+                        onClick={handlePanicStop}
+                        disabled={sessionComplete || roundCompleted}
+                      >
+                        Panick / Stop Sound
+                      </button>
+                    </div>
+
+                    <div className="controls-secondary">
+                      <button
+                        className="btn btn-hint"
+                        onClick={handleHint}
+                        disabled={
+                          sessionComplete ||
+                          hintVisible ||
+                          roundCompleted ||
+                          !hintAvailable
+                        }
+                      >
+                        💡 Hint
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-done"
+                        onClick={() => handleDone(false)}
+                        disabled={sessionComplete || roundCompleted}
+                      >
+                        Done
+                      </button>
+                      {(roundCompleted || sessionComplete) && (
+                        <button
+                          className={`btn btn-ghost btn-next-round ${
+                            roundCompleted && !sessionComplete
+                              ? "btn-next-round--blink"
+                              : ""
+                          }`}
+                          onClick={handleNextRound}
+                        >
+                          {sessionComplete ? "Restart Session" : "Next Round"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="slider-block">
+                    <label htmlFor="tuning-slider" className="slider-label">
+                      Tuning slider
+                    </label>
+                    <div className="slider-wrapper">
+                      <input
+                        id="tuning-slider"
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.001}
+                        value={sliderValue}
+                        onChange={handleSliderChange}
+                        className="tuning-slider"
+                      />
+                      {hintVisible && (
+                        <div className="slider-hint-bar">
+                          <div
+                            className="slider-hint-window"
+                            style={{
+                              left: `${hintLeftPercent}%`,
+                              width: `${hintWidthPercent}%`
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <p className="slider-helper">
+                      Move slowly until the beats calm down and the sound feels{" "}
+                      <em>steady</em>. The correct tuning point is different
+                      every round and is <strong>not</strong> visually marked.
+                      The <strong>HINT</strong> button reveals a{" "}
+                      <strong>30-cent wide</strong> window centered on the
+                      correct answer; hints are limited and become more
+                      expensive as you use them.
+                    </p>
+                    {!hintAvailable && (
+                      <p className="slider-helper">
+                        Hint quota used:{" "}
+                        <strong>{MAX_HINTS_PER_SESSION}</strong> /
+                        {MAX_HINTS_PER_SESSION}. No more hints available this
+                        session.
+                      </p>
+                    )}
+                  </div>
+
+                  <div
+                    className={`round-feedback ${
+                      lastResultForCurrentRound ? "round-feedback--active" : ""
+                    }`}
+                  >
+                    {lastResultForCurrentRound ? (
+                      <>
+                        <h3>Round Result</h3>
+                        <p className="feedback-main">
+                          Tuning error:{" "}
+                          <strong>
+                            {Math.abs(
+                              lastResultForCurrentRound.errorCents
+                            ).toFixed(2)}{" "}
+                            cents
+                          </strong>{" "}
+                          (
+                          {directionLabel(
+                            lastResultForCurrentRound.errorCents
+                          )}
+                          )
+                        </p>
+                        <p className="feedback-sub">
+                          Time (capped at {MAX_ROUND_DURATION_SECONDS}s):{" "}
+                          <strong>
+                            {lastResultForCurrentRound.timeSeconds.toFixed(2)}{" "}
+                            s
+                          </strong>{" "}
+                          · Round score change:{" "}
+                          <strong>
+                            {lastResultForCurrentRound.deltaScore > 0
+                              ? "+"
+                              : ""}
+                            {lastResultForCurrentRound.deltaScore}
+                          </strong>
+                        </p>
+                        <ul className="feedback-list">
+                          {lastResultForCurrentRound.contributions.map(
+                            (c, idx) => (
+                              <li key={idx}>{c}</li>
+                            )
+                          )}
+                        </ul>
+                      </>
+                    ) : (
+                      <p className="feedback-hint">
+                        Press <strong>PLAY</strong>, listen, gently move the
+                        slider, then hit <strong>DONE</strong> when you feel the
+                        interval lock in. If you wait more than{" "}
+                        {MAX_ROUND_DURATION_SECONDS}s, the system will
+                        auto-submit your current tuning for this round.
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p>Waiting for examination to start…</p>
               )}
-            </>
-          ) : (
-            <p>Waiting for examination to start…</p>
-          )}
-        </section>
+            </section>
+          </>
+        )}
       </main>
 
-      <footer className="app-footer" />
+      {!resultsComplete && <footer className="app-footer" />}
 
       {/* DISCLAIMER overlay – headphones */}
       {!disclaimerAcknowledged && licenseAccepted !== false && (
         <div className="license-overlay">
           <div className="license-dialog card">
-            <h2>Audio disclaimer – use headphones</h2>
+            <h2>Audio Disclaimer – Use Headphones</h2>
             <div className="license-scroll">
               <p>
                 For accurate tuning and to protect your ears,{" "}
@@ -1195,7 +1188,7 @@ const App: React.FC = () => {
       {licenseAccepted === false && (
         <div className="blocked-overlay">
           <div className="blocked-message">
-            <h2>License not accepted</h2>
+            <h2>License Not Accepted</h2>
             <p>
               You did not accept the Testing-Only, No-Copy Software License
               (CTOL v1.0). The application is blocked and cannot be used.
